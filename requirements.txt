@@ -6,7 +6,6 @@ packaging
 requests
 colorama
 pystray
-keyring
 pywin32
 Pillow
 asyncio
