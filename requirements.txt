@@ -1,5 +1,5 @@
 pypresence @ git+https://github.com/qwertyquerty/pypresence.git
-pyinstaller==6.5.0
+pyinstaller
 PyQtWebEngine
 yandex-music
 packaging
