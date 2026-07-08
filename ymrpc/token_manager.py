@@ -1,5 +1,5 @@
 import multiprocessing
-import time  # Добавили для задержки при ошибках сети
+import time
 
 from yandex_music import Client
 
@@ -58,37 +58,68 @@ def Init_yaToken(forceGet: bool = False):
     if token is not None and len(token) > 10:
         state.ya_token = token
 
-        # Защита от отсутствия сети/прокси при автозагрузке
-        max_retries = 6
-        for attempt in range(max_retries):
-            try:
-                Presence.client = Client(token=state.ya_token).init()
+        # Бесконечный цикл для выбора действий при отсутствии сети
+        while True:
+            connected = False
+            max_retries = 6
 
-                from .tray import get_account_name, update_account_name
+            for attempt in range(max_retries):
+                try:
+                    Presence.client = Client(token=state.ya_token).init()
 
-                log(f"Logged in as - {get_account_name()}", LogType.Update_Status)
-                if Is_run_by_exe() and state.mainMenu:
-                    update_account_name(state.mainMenu, get_account_name())
+                    from .tray import get_account_name, update_account_name
 
-                break  # Успешно подключились, выходим из цикла попыток
-            except Exception as exception:
-                error_str = str(exception)
-                # Проверяем, связана ли ошибка с DNS или недоступностью хоста
-                if (
-                    "getaddrinfo failed" in error_str
-                    or "Max retries" in error_str
-                    or "NameResolutionError" in error_str
-                ):
-                    log(f"Network error to Yandex API. Retrying in 5s... ({attempt + 1}/{max_retries})", LogType.Error)
-                    time.sleep(5)
-                    if attempt == max_retries - 1:
+                    log(f"Logged in as - {get_account_name()}", LogType.Update_Status)
+                    if Is_run_by_exe() and state.mainMenu:
+                        update_account_name(state.mainMenu, get_account_name())
+
+                    connected = True
+                    break  # Успешно подключились, выходим из for
+                except Exception as exception:
+                    error_str = str(exception)
+                    if (
+                        "getaddrinfo failed" in error_str
+                        or "Max retries" in error_str
+                        or "NameResolutionError" in error_str
+                    ):
+                        log(
+                            f"Network error to Yandex API. Retrying in 5s... ({attempt + 1}/{max_retries})",
+                            LogType.Error,
+                        )
+                        time.sleep(5)
+                    else:
+                        # Ошибка не связана с сетью, выходим из авторизации
                         Presence.client = None
                         Handle_exception(exception)
-                else:
-                    # Ошибка не сетевая (например, Яндекс отклонил токен), не пытаемся снова
-                    Presence.client = None
-                    Handle_exception(exception)
-                    break
+                        return
+
+            if connected:
+                break  # Выходим из бесконечного цикла while, всё ок
+
+            # Если за 30 секунд (6 попыток по 5 сек) сеть не появилась — выводим выбор
+            print("\n" + "=" * 60)
+            print("[YandexMusicRPC] Не удалось связаться с серверами Яндекс Музыки.")
+            print("Возможно, сетевой интерфейс, VPN или прокси ещё не успели подняться.")
+            print("-" * 60)
+            print("1. Пробовать дальше (запустить ожидание ещё на 30 секунд)")
+            print("2. Удалить этот токен и создать новую сессию (перезайти в аккаунт)")
+            print("=" * 60)
+
+            try:
+                choice = input("Выберите вариант (1 или 2, по умолчанию 1): ").strip()
+            except Exception:
+                choice = "1"
+
+            if choice == "2":
+                log("Выбран сброс авторизации. Удаление сохраненного токена...", LogType.Default)
+                Remove_yaToken_From_Memory()
+                Presence.client = None
+                # Рекурсивно вызываем создание новой сессии с окном авторизации
+                Init_yaToken(forceGet=True)
+                return
+            else:
+                log("Выбрано продолжение ожидания. Повторный цикл проверки сети...", LogType.Default)
+                # Цикл while True уходит на следующую итерацию и снова пробует 6 раз
     else:
         Presence.client = None
 
