@@ -1,4 +1,5 @@
 import multiprocessing
+import time  # Добавили для задержки при ошибках сети
 
 from yandex_music import Client
 
@@ -56,17 +57,38 @@ def Init_yaToken(forceGet: bool = False):
 
     if token is not None and len(token) > 10:
         state.ya_token = token
-        try:
-            Presence.client = Client(token=state.ya_token).init()
 
-            from .tray import get_account_name, update_account_name
+        # Защита от отсутствия сети/прокси при автозагрузке
+        max_retries = 6
+        for attempt in range(max_retries):
+            try:
+                Presence.client = Client(token=state.ya_token).init()
 
-            log(f"Logged in as - {get_account_name()}", LogType.Update_Status)
-            if Is_run_by_exe() and state.mainMenu:
-                update_account_name(state.mainMenu, get_account_name())
-        except Exception as exception:
-            Presence.client = None
-            Handle_exception(exception)
+                from .tray import get_account_name, update_account_name
+
+                log(f"Logged in as - {get_account_name()}", LogType.Update_Status)
+                if Is_run_by_exe() and state.mainMenu:
+                    update_account_name(state.mainMenu, get_account_name())
+
+                break  # Успешно подключились, выходим из цикла попыток
+            except Exception as exception:
+                error_str = str(exception)
+                # Проверяем, связана ли ошибка с DNS или недоступностью хоста
+                if (
+                    "getaddrinfo failed" in error_str
+                    or "Max retries" in error_str
+                    or "NameResolutionError" in error_str
+                ):
+                    log(f"Network error to Yandex API. Retrying in 5s... ({attempt + 1}/{max_retries})", LogType.Error)
+                    time.sleep(5)
+                    if attempt == max_retries - 1:
+                        Presence.client = None
+                        Handle_exception(exception)
+                else:
+                    # Ошибка не сетевая (например, Яндекс отклонил токен), не пытаемся снова
+                    Presence.client = None
+                    Handle_exception(exception)
+                    break
     else:
         Presence.client = None
 
