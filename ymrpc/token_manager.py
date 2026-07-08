@@ -1,7 +1,5 @@
 import multiprocessing
 
-import keyring
-
 from yandex_music import Client
 
 from . import getToken
@@ -15,8 +13,8 @@ from .presence import Presence
 
 
 def Remove_yaToken_From_Memory():
-    if keyring.get_password("WinYandexMusicRPC", "token") is not None:
-        keyring.delete_password("WinYandexMusicRPC", "token")
+    if state.config_manager.get_setting("Auth", "token") is not None:
+        state.config_manager.set_setting("Auth", "token", "")
         log("Old token has been removed from memory.", LogType.Update_Status)
         state.ya_token = str()
 
@@ -37,7 +35,7 @@ def Init_yaToken(forceGet: bool = False):
             process.join()
             token = state.result_queue.get()
             if token is not None and len(token) > 10:
-                keyring.set_password("WinYandexMusicRPC", "token", token)
+                state.config_manager.set_setting("Auth", "token", token)
                 log(f"Successfully received the token: {Blur_string(token)}", LogType.Update_Status)
         except Exception as exception:
             log(f"Something happened when trying to initialize token: {exception}", LogType.Error)
@@ -50,7 +48,7 @@ def Init_yaToken(forceGet: bool = False):
 
     else:
         try:
-            token = keyring.get_password("WinYandexMusicRPC", "token")
+            token = state.config_manager.get_setting("Auth", "token")
             if token:
                 log(f"Loaded token: {Blur_string(token)}", LogType.Update_Status)
         except Exception as exception:
