@@ -1,9 +1,13 @@
 import time
 from datetime import timedelta
-
 import asyncio
 import psutil
-import pypresence
+from typing import Any, Optional, cast  # Импортируем инструменты для аннотации типов
+
+# Исправленные импорты, как того просит Pylance
+from pypresence.presence import AioPresence
+from pypresence.types import ActivityType
+from pypresence import exceptions
 
 from .constants import CLIENT_ID_EN, CLIENT_ID_RU_DECLINED
 from .enums import ButtonConfig, LanguageConfig, LogType, PlaybackStatus
@@ -13,33 +17,33 @@ from .yandex_client import get_info
 from .yandex_ws import get_current_track
 from .error_handling import Handle_exception
 from . import state
-from pypresence import ActivityType
 
 
 class Presence:
-    client = None
-    currentTrack = None
-    rpc = None
-    running = False
-    paused = False
-    paused_time = 0
-    exe_names = ["Discord.exe", "DiscordCanary.exe", "DiscordPTB.exe", "Vesktop.exe"]
+    # Явно указываем типы переменных класса, чтобы Pylance не ругался на None
+    client: Any = None
+    currentTrack: Optional[dict[str, Any]] = None
+    rpc: Optional[AioPresence] = None
+    running: bool = False
+    paused: bool = False
+    paused_time: int = 0
+    exe_names: list[str] = ["Discord.exe", "DiscordCanary.exe", "DiscordPTB.exe", "Vesktop.exe"]
 
     @staticmethod
     def is_discord_running() -> bool:
         return any(name in (p.name() for p in psutil.process_iter()) for name in Presence.exe_names)
 
     @staticmethod
-    def connect_rpc():
+    async def connect_rpc() -> Optional[AioPresence]:
         try:
             client_id = CLIENT_ID_EN if state.language_config == LanguageConfig.ENGLISH else CLIENT_ID_RU_DECLINED
-            rpc = pypresence.Presence(client_id)
-            rpc.connect()
+            rpc = AioPresence(client_id)
+            await rpc.connect()
             return rpc
-        except pypresence.exceptions.DiscordNotFound:
+        except exceptions.DiscordNotFound:
             log("Pypresence - Discord not found.", LogType.Error)
             return None
-        except pypresence.exceptions.InvalidID:
+        except exceptions.InvalidID:
             log("Pypresence - Incorrect CLIENT_ID", LogType.Error)
             return None
         except Exception as e:
@@ -47,25 +51,23 @@ class Presence:
             return None
 
     @staticmethod
-    def discord_available():
+    # Добавляем -> None, чтобы исправить ошибку '"Never" is not awaitable'
+    async def discord_available() -> None:
         while True:
             if Presence.is_discord_running():
-                Presence.rpc = Presence.connect_rpc()
-                if Presence.rpc:
+                Presence.rpc = await Presence.connect_rpc()
+                if Presence.rpc is not None:
                     log("Discord is ready for Rich Presence")
                     break
                 else:
                     log("Discord is launched but not ready for Rich Presence. Try again...", LogType.Error)
             else:
                 log("Discord is not launched", LogType.Error)
-            time.sleep(3)
+            await asyncio.sleep(3)
 
     @staticmethod
     def stop() -> None:
-        if Presence.rpc:
-            Presence.rpc.close()
-            Presence.rpc = None
-            Presence.running = False
+        Presence.running = False
 
     @staticmethod
     def need_restart() -> None:
@@ -73,36 +75,36 @@ class Presence:
         state.needRestart = True
 
     @staticmethod
-    def restart() -> None:
+    async def restart() -> None:
         Presence.currentTrack = None
         state.playable_id_prev = None
-        if Presence.rpc:
+        if Presence.rpc is not None:
             Presence.rpc.close()
             Presence.rpc = None
-        time.sleep(3)
-        Presence.discord_available()
+        await asyncio.sleep(3)
+        await Presence.discord_available()
 
     @staticmethod
-    def discord_was_closed() -> None:
+    async def discord_was_closed() -> None:
         log("Discord was closed. Waiting for restart...", LogType.Error)
         Presence.currentTrack = None
         state.playable_id_prev = None
-        Presence.discord_available()
+        await Presence.discord_available()
 
     @staticmethod
-    def FullClearRPC() -> None:
+    async def FullClearRPC() -> None:
         log("Clear RPC due to error", LogType.Error)
         Presence.currentTrack = None
         state.playable_id_prev = None
-        if Presence.rpc:
-            Presence.rpc.clear()
+        if Presence.rpc is not None:
+            await Presence.rpc.clear()
 
     @staticmethod
-    def start() -> None:  # sourcery skip: low-code-quality
+    async def start() -> None:
         clientErrorShown = False
         pausedTimestamp = 0
 
-        Presence.discord_available()
+        await Presence.discord_available()
         Presence.running = True
         Presence.currentTrack = None
 
@@ -124,25 +126,25 @@ class Presence:
 
                         threading.Thread(target=Init_yaToken, args=(True,), daemon=True).start()
 
-                time.sleep(3)
+                await asyncio.sleep(3)
                 continue
 
             clientErrorShown = False
             currentTime = int(time.time())
 
             if not Presence.is_discord_running():
-                Presence.discord_was_closed()
+                await Presence.discord_was_closed()
 
             if state.needRestart:
                 state.needRestart = False
-                Presence.restart()
+                await Presence.restart()
 
             try:
-                ongoing_track = Presence.getTrack()
+                ongoing_track = await Presence.getTrack()
                 if ongoing_track["success"]:
-                    is_new_track = Presence.currentTrack is None or Presence.currentTrack.get("label") != ongoing_track.get(
+                    is_new_track = Presence.currentTrack is None or Presence.currentTrack.get(
                         "label"
-                    )
+                    ) != ongoing_track.get("label")
                     is_start_time_changed = Presence.currentTrack and Presence.currentTrack.get(
                         "start-time"
                     ) != ongoing_track.get("start-time")
@@ -151,26 +153,26 @@ class Presence:
 
                     if is_new_track:
                         log(f"Changed track to {ongoing_track['label']}", LogType.Update_Status)
-                        Presence.update_presence(ongoing_track, currentTime)
+                        await Presence.update_presence(ongoing_track, currentTime)
                         Presence.currentTrack = ongoing_track
                         Presence.paused = False
                         Presence.paused_time = 0
 
                     elif is_start_time_changed and not Presence.paused:
-                        Presence.update_presence(ongoing_track, currentTime)
+                        await Presence.update_presence(ongoing_track, currentTime)
                         Presence.currentTrack = ongoing_track
                         Presence.paused = False
                         Presence.paused_time = 0
 
                     elif is_paused and not Presence.paused:
                         log(f"Track {ongoing_track['label']} on pause", LogType.Update_Status)
-                        Presence.update_presence(ongoing_track, paused=True)
+                        await Presence.update_presence(ongoing_track, paused=True)
                         Presence.paused = True
                         pausedTimestamp = currentTime
 
                     elif is_playing and Presence.paused:
                         log(f"Track {ongoing_track['label']} off pause.", LogType.Update_Status)
-                        Presence.update_presence(ongoing_track, currentTime)
+                        await Presence.update_presence(ongoing_track, currentTime)
                         Presence.paused = False
                         Presence.currentTrack = ongoing_track
                         pausedTimestamp = 0
@@ -178,23 +180,28 @@ class Presence:
                     if Presence.paused and pausedTimestamp != 0:
                         Presence.paused_time = currentTime - pausedTimestamp
                         if Presence.paused_time > 5 * 60:
-                            Presence.rpc.clear()
+                            # Проверяем на is not None
+                            if Presence.rpc is not None:
+                                await Presence.rpc.clear()
                             pausedTimestamp = 0
                             log("Clear RPC due to paused for more than 5 minutes", LogType.Update_Status)
                     else:
                         Presence.paused_time = 0
                 else:
-                    Presence.FullClearRPC()
+                    await Presence.FullClearRPC()
 
-                time.sleep(3)
+                await asyncio.sleep(3)
 
-            except pypresence.exceptions.PipeClosed:
-                Presence.discord_was_closed()
+            except exceptions.PipeClosed:
+                await Presence.discord_was_closed()
             except Exception as e:
                 log(f"Presence class stopped for a reason: {e}", LogType.Error)
 
+        if Presence.rpc is not None:
+            Presence.rpc.close()
+
     @staticmethod
-    def update_presence(ongoing_track, current_time: int = 0, paused: bool = False):
+    async def update_presence(ongoing_track: dict[str, Any], current_time: int = 0, paused: bool = False) -> None:
         start_time = current_time - int(ongoing_track["start-time"].total_seconds())
         end_time = start_time + ongoing_track["durationSec"]
 
@@ -236,12 +243,14 @@ class Presence:
         if state.button_config != ButtonConfig.NEITHER:
             presence_args["buttons"] = build_buttons(ongoing_track["link"])
 
-        Presence.rpc.update(**presence_args)
+        # Защита от отсутствующего rpc для Pylance
+        if Presence.rpc is not None:
+            await Presence.rpc.update(**presence_args)
 
     @staticmethod
-    def getTrack() -> dict:
+    async def getTrack() -> dict[str, Any]:
         try:
-            current_state = asyncio.run(get_current_track())
+            current_state = await get_current_track()
             if not (current_state and isinstance(current_state, dict) and current_state.get("success") is True):
                 log("Failed to receive data from ynison.", LogType.Error)
                 return {"success": False}
@@ -250,9 +259,12 @@ class Presence:
             isNewTrack = state.playable_id_prev != current_playable_id
 
             if isNewTrack:
-                track_info = get_info().get_track_by_id(current_state["playable_id"])
+                # Обертка cast(dict[str, Any], ...) говорит Pylance, что здесь лежат данные любого типа
+                track_info = cast(
+                    dict[str, Any], await asyncio.to_thread(get_info().get_track_by_id, current_state["playable_id"])
+                )
             else:
-                track_info = state.info_cache
+                track_info = cast(dict[str, Any], state.info_cache)
 
             if not (track_info and isinstance(track_info, dict) and track_info.get("success") is True):
                 log("Failed to get track information.", LogType.Error)
@@ -267,7 +279,9 @@ class Presence:
             elif Presence.currentTrack and Presence.currentTrack.get("success"):
                 currentTrack_copy = Presence.currentTrack.copy()
                 currentTrack_copy["start-time"] = timedelta(milliseconds=int(current_state["progress_ms"]))
-                currentTrack_copy["playback"] = PlaybackStatus.Paused if current_state["paused"] else PlaybackStatus.Playing
+                currentTrack_copy["playback"] = (
+                    PlaybackStatus.Paused if current_state["paused"] else PlaybackStatus.Playing
+                )
                 return currentTrack_copy
 
             trackId = track_info["track_id"].split(":")

@@ -2,6 +2,7 @@ import multiprocessing
 import os
 import sys
 import threading
+import asyncio  # Добавляем библиотеку для асинхронности
 
 import win32console
 
@@ -61,7 +62,8 @@ def main():
 
         Init_yaToken(False)
 
-        Presence.start()
+        # Главное изменение: запускаем бесконечный асинхронный цикл один раз
+        asyncio.run(Presence.start())
 
     except KeyboardInterrupt:
         log("Keyboard interrupt received, stopping...")
