@@ -1,6 +1,4 @@
 import multiprocessing
-import os
-import sys
 import threading
 import asyncio  # Добавляем библиотеку для асинхронности
 
