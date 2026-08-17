@@ -4,3 +4,5 @@
 /__pycache__/
 /.idea/
 /ymrpc/__pycache__
+rpc.log
+rpc_output.log

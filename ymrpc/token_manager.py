@@ -8,7 +8,6 @@ from .enums import LogType
 from .logger import log
 from .utils import Blur_string
 from . import state
-from .windows import Get_IconPath, Is_run_by_exe
 from .error_handling import Handle_exception
 from .presence import Presence
 
@@ -31,7 +30,7 @@ def Init_yaToken(forceGet: bool = False):
     if forceGet:
         try:
             Remove_yaToken_From_Memory()
-            process = multiprocessing.Process(target=update_token_task, args=(Get_IconPath(), state.result_queue))
+            process = multiprocessing.Process(target=update_token_task, args=(None, state.result_queue))
             process.start()
             process.join()
             token = state.result_queue.get()
@@ -58,7 +57,6 @@ def Init_yaToken(forceGet: bool = False):
     if token is not None and len(token) > 10:
         state.ya_token = token
 
-        # Бесконечный цикл для выбора действий при отсутствии сети
         while True:
             connected = False
             max_retries = 6
@@ -66,15 +64,10 @@ def Init_yaToken(forceGet: bool = False):
             for attempt in range(max_retries):
                 try:
                     Presence.client = Client(token=state.ya_token).init()
-
-                    from .tray import get_account_name, update_account_name
-
-                    log(f"Logged in as - {get_account_name()}", LogType.Update_Status)
-                    if Is_run_by_exe() and state.mainMenu:
-                        update_account_name(state.mainMenu, get_account_name())
-
+                    account_name = getattr(Presence.client.me.account, "display_name", "Yandex User")
+                    log(f"Logged in as - {account_name}", LogType.Update_Status)
                     connected = True
-                    break  # Успешно подключились, выходим из for
+                    break
                 except Exception as exception:
                     error_str = str(exception)
                     if (
@@ -88,21 +81,18 @@ def Init_yaToken(forceGet: bool = False):
                         )
                         time.sleep(5)
                     else:
-                        # Ошибка не связана с сетью, выходим из авторизации
                         Presence.client = None
                         Handle_exception(exception)
                         return
 
             if connected:
-                break  # Выходим из бесконечного цикла while, всё ок
+                break
 
-            # Если за 30 секунд (6 попыток по 5 сек) сеть не появилась — выводим выбор
             print("\n" + "=" * 60)
             print("[YandexMusicRPC] Не удалось связаться с серверами Яндекс Музыки.")
-            print("Возможно, сетевой интерфейс, VPN или прокси ещё не успели подняться.")
             print("-" * 60)
             print("1. Пробовать дальше (запустить ожидание ещё на 30 секунд)")
-            print("2. Удалить этот токен и создать новую сессию (перезайти в аккаунт)")
+            print("2. Удалить этот токен и создать новую сессию")
             print("=" * 60)
 
             try:
@@ -114,12 +104,10 @@ def Init_yaToken(forceGet: bool = False):
                 log("Выбран сброс авторизации. Удаление сохраненного токена...", LogType.Default)
                 Remove_yaToken_From_Memory()
                 Presence.client = None
-                # Рекурсивно вызываем создание новой сессии с окном авторизации
                 Init_yaToken(forceGet=True)
                 return
             else:
-                log("Выбрано продолжение ожидания. Повторный цикл проверки сети...", LogType.Default)
-                # Цикл while True уходит на следующую итерацию и снова пробует 6 раз
+                log("Выбрано продолжение ожидания...", LogType.Default)
     else:
         Presence.client = None
 

@@ -2,9 +2,8 @@ import time
 from datetime import timedelta
 import asyncio
 import psutil
-from typing import Any, Optional, cast  # Импортируем инструменты для аннотации типов
+from typing import Any, Optional, cast
 
-# Исправленные импорты, как того просит Pylance
 from pypresence.presence import AioPresence
 from pypresence.types import ActivityType
 from pypresence import exceptions
@@ -18,20 +17,42 @@ from .yandex_ws import get_current_track
 from .error_handling import Handle_exception
 from . import state
 
+# Патч бага pypresence: предотвращаем падение при закрытии работающего event loop
+def _safe_pypresence_close(self):
+    try:
+        self.send_data(2, {}, 2)
+    except Exception:
+        pass
+    try:
+        if hasattr(self, "sock_writer") and self.sock_writer:
+            self.sock_writer.close()
+    except Exception:
+        pass
+
+AioPresence.close = _safe_pypresence_close
+
 
 class Presence:
-    # Явно указываем типы переменных класса, чтобы Pylance не ругался на None
     client: Any = None
     currentTrack: Optional[dict[str, Any]] = None
     rpc: Optional[AioPresence] = None
     running: bool = False
     paused: bool = False
     paused_time: int = 0
-    exe_names: list[str] = ["Discord.exe", "DiscordCanary.exe", "DiscordPTB.exe", "Vesktop.exe"]
+    exe_names: list[str] = [
+        "Discord.exe", "DiscordCanary.exe", "DiscordPTB.exe", "Vesktop.exe",
+        "discord", "Discord", "DiscordCanary", "DiscordPTB", "vesktop", "Vesktop"
+    ]
 
     @staticmethod
     def is_discord_running() -> bool:
-        return any(name in (p.name() for p in psutil.process_iter()) for name in Presence.exe_names)
+        for p in psutil.process_iter(["name"]):
+            try:
+                if p.info and p.info["name"] in Presence.exe_names:
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        return False
 
     @staticmethod
     async def connect_rpc() -> Optional[AioPresence]:
@@ -51,7 +72,6 @@ class Presence:
             return None
 
     @staticmethod
-    # Добавляем -> None, чтобы исправить ошибку '"Never" is not awaitable'
     async def discord_available() -> None:
         while True:
             if Presence.is_discord_running():
@@ -79,7 +99,10 @@ class Presence:
         Presence.currentTrack = None
         state.playable_id_prev = None
         if Presence.rpc is not None:
-            Presence.rpc.close()
+            try:
+                Presence.rpc.close()
+            except Exception:
+                pass
             Presence.rpc = None
         await asyncio.sleep(3)
         await Presence.discord_available()
@@ -97,7 +120,10 @@ class Presence:
         Presence.currentTrack = None
         state.playable_id_prev = None
         if Presence.rpc is not None:
-            await Presence.rpc.clear()
+            try:
+                await Presence.rpc.clear()
+            except Exception:
+                pass
 
     @staticmethod
     async def start() -> None:
@@ -112,8 +138,7 @@ class Presence:
             if not Presence.client:
                 if not clientErrorShown:
                     log(
-                        "To work, you need to log in to your Yandex account. "
-                        "Tray -> Yandex Settings -> Login to account.",
+                        "To work, you need to log in to your Yandex account.",
                         LogType.Error,
                     )
                     clientErrorShown = True
@@ -180,9 +205,11 @@ class Presence:
                     if Presence.paused and pausedTimestamp != 0:
                         Presence.paused_time = currentTime - pausedTimestamp
                         if Presence.paused_time > 5 * 60:
-                            # Проверяем на is not None
                             if Presence.rpc is not None:
-                                await Presence.rpc.clear()
+                                try:
+                                    await Presence.rpc.clear()
+                                except Exception:
+                                    pass
                             pausedTimestamp = 0
                             log("Clear RPC due to paused for more than 5 minutes", LogType.Update_Status)
                     else:
@@ -198,7 +225,10 @@ class Presence:
                 log(f"Presence class stopped for a reason: {e}", LogType.Error)
 
         if Presence.rpc is not None:
-            Presence.rpc.close()
+            try:
+                Presence.rpc.close()
+            except Exception:
+                pass
 
     @staticmethod
     async def update_presence(ongoing_track: dict[str, Any], current_time: int = 0, paused: bool = False) -> None:
@@ -243,9 +273,11 @@ class Presence:
         if state.button_config != ButtonConfig.NEITHER:
             presence_args["buttons"] = build_buttons(ongoing_track["link"])
 
-        # Защита от отсутствующего rpc для Pylance
         if Presence.rpc is not None:
-            await Presence.rpc.update(**presence_args)
+            try:
+                await Presence.rpc.update(**presence_args)
+            except Exception:
+                pass
 
     @staticmethod
     async def getTrack() -> dict[str, Any]:
@@ -259,7 +291,6 @@ class Presence:
             isNewTrack = state.playable_id_prev != current_playable_id
 
             if isNewTrack:
-                # Обертка cast(dict[str, Any], ...) говорит Pylance, что здесь лежат данные любого типа
                 track_info = cast(
                     dict[str, Any], await asyncio.to_thread(get_info().get_track_by_id, current_state["playable_id"])
                 )

@@ -6,7 +6,6 @@ packaging
 requests
 colorama
 pystray
-pywin32
 Pillow
 asyncio
 psutil

@@ -4,9 +4,11 @@ import os
 
 class ConfigManager:
     def __init__(self, config_file="settings.ini", temp_dir_name="YandexMusicRPC"):
-        self.temp_dir = os.path.join(os.getenv("LOCALAPPDATA"), temp_dir_name)
+        # Кроссплатформенный путь: %LOCALAPPDATA% на Windows или ~/.config на Linux
+        base_dir = os.getenv("LOCALAPPDATA") or os.getenv("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+        self.temp_dir = os.path.join(base_dir, temp_dir_name)
         if not os.path.exists(self.temp_dir):
-            os.makedirs(self.temp_dir)
+            os.makedirs(self.temp_dir, exist_ok=True)
 
         self.config_file = os.path.join(self.temp_dir, config_file)
         self.config = configparser.ConfigParser()
@@ -14,9 +16,9 @@ class ConfigManager:
 
     def _load_config(self):
         if os.path.exists(self.config_file):
-            self.config.read(self.config_file)
+            self.config.read(self.config_file, encoding="utf-8")
         else:
-            with open(self.config_file, "w") as file:
+            with open(self.config_file, "w", encoding="utf-8") as file:
                 self.config.write(file)
 
     def get_setting(self, section, option, fallback=None):
@@ -33,7 +35,7 @@ class ConfigManager:
         self._save_config()
 
     def _save_config(self):
-        with open(self.config_file, "w") as configfile:
+        with open(self.config_file, "w", encoding="utf-8") as configfile:
             self.config.write(configfile)
 
     def set_enum_setting(self, section, option, enum_value):
