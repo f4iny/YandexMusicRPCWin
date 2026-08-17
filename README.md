@@ -57,4 +57,9 @@
 >Код не идеален, так как Python не является моим основным языком, и скрипт писался для личного использования. Однако он может стать основой для ваших собственных скриптов.
 
 >За основу был взят код [WinYandexMusicRPC](https://github.com/FozerG/WinYandexMusicRPC)  
->Используется [Yandex Music API](https://github.com/MarshalX/yandex-music-api)   
+>Используется [Yandex Music API](https://github.com/MarshalX/yandex-music-api)
+
+------------
+## Изменения в форке
+
+Добавлена адаптация под linux и запуск с помощью .sh скрипта
