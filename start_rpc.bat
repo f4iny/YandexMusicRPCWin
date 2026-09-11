@@ -10,11 +10,11 @@ if %errorLevel% == 0 (
 )
 
 :run
-:: Переходим в директорию, где находится этот батник
+title YandexMusicRPC_Daemon
 cd /d "%~dp0"
 
 :: Активируем виртуальное окружение
 call .venv\Scripts\activate.bat
 
-:: Запускаем скрипт (используем pythonw, чтобы скрыть лишнее черное окно консоли, если нужно)
+:: Запускаем скрипт
 python main.py
