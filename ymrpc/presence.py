@@ -84,11 +84,19 @@ class Presence:
         await asyncio.sleep(3)
         await Presence.discord_available()
 
+
+
     @staticmethod
     async def discord_was_closed() -> None:
-        log("Discord was closed. Waiting for restart...", LogType.Error)
+        log("Discord connection lost or timed out. Reconnecting...", LogType.Error)
         Presence.currentTrack = None
         state.playable_id_prev = None
+        if Presence.rpc is not None:
+            try:
+                Presence.rpc.close()
+            except Exception:
+                pass
+            Presence.rpc = None
         await Presence.discord_available()
 
     @staticmethod
@@ -192,7 +200,7 @@ class Presence:
 
                 await asyncio.sleep(3)
 
-            except exceptions.PipeClosed:
+            except (exceptions.PipeClosed, exceptions.ResponseTimeout):
                 await Presence.discord_was_closed()
             except Exception as e:
                 log(f"Presence class stopped for a reason: {e}", LogType.Error)
